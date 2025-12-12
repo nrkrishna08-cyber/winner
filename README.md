@@ -1,24 +1,20 @@
 # Horse Backing Rules (Streamlit)
 
-## What changed (your request)
-- **No Horse name column** (removed completely)
-- In the table:
-  - **Jockey** is a dropdown (from your jockey list)
-  - **Venue** is a dropdown (from your venue list)
-  - **Reviewed** is dropdown **Yes/No** (not a checkbox)
+## What changed
+- ✅ Added **TotalRunners** column in the INPUT table (this is the real number of runners in the race)
+- Rule enforced: **if TotalRunners > 10 => NO BACK**
+- Final result is now shown clearly in a **Final result** section for the selected race
+- Still: No horse name column, dropdowns for jockey/venue, Reviewed is Yes/No
 
-## Start empty (no default table)
-The table starts empty every time. Click **Add runner row** to begin.
-
-## Rules
-- Allowed countries: Australia, New Zealand, South Africa, France
-- Turf only (no All Weather)
-- Max runners: 10
-- Blocked venues list
-- Must review all runners (Reviewed must be Yes for all rows in the race)
-- Good horse = odds between 1.4 and 2.0 (adjustable slider)
-- If more than 1 good horse in the race => NO BACK
-- Jockey must be in your whitelist (editable list)
+## How to use
+1. Click **Add runner row**
+2. Fill:
+   - Race (e.g., R1)
+   - TotalRunners (e.g., 12)  ← same value for all rows in that race
+   - Jockey, Odds, Venue, TrackType, Country, Reviewed
+3. Select the race at the top and see:
+   - Final result (BACK / NO BACK)
+   - Pick(s) to BACK (if any)
 
 ## Run
 ```bash

@@ -38,7 +38,8 @@ DEFAULT_VENUES = [
     "Moonee Valley",
 ]
 
-COLUMNS = ["Race", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
+# ✅ Number of runners is now a USER INPUT column (per race)
+COLUMNS = ["Race", "TotalRunners", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
 
 def norm(s: str) -> str:
     return str(s).strip().lower()
@@ -50,7 +51,7 @@ def do_rerun():
         st.experimental_rerun()
 
 # -------------------------
-# No default table: start EMPTY
+# Start EMPTY table (no defaults)
 # -------------------------
 empty_df = pd.DataFrame(columns=COLUMNS)
 
@@ -75,6 +76,7 @@ if "editor_key" not in st.session_state:
 def add_blank_row():
     row = {
         "Race": "",
+        "TotalRunners": None,  # user fills (e.g., 12)
         "Jockey": st.session_state.allowed_jockeys[0] if st.session_state.allowed_jockeys else "",
         "Odds": None,
         "Venue": st.session_state.venues[0] if st.session_state.venues else "",
@@ -116,11 +118,8 @@ with st.sidebar:
             reset_all()
             do_rerun()
 
-    st.caption("Table starts empty. Add rows, then fill Race/Jockey/Odds/Venue/Track/Country/Reviewed.")
-
     st.divider()
     st.header("Jockey list (dropdown)")
-
     add_j = st.text_input("Add jockey name")
     c3, c4 = st.columns(2)
     with c3:
@@ -145,7 +144,6 @@ with st.sidebar:
 
     st.divider()
     st.header("Venue list (dropdown)")
-
     add_v = st.text_input("Add venue name")
     c5, c6 = st.columns(2)
     with c5:
@@ -186,49 +184,58 @@ with st.sidebar:
 
 st.info(
     "Hard rules: Country must be Australia / New Zealand / South Africa / France. "
-    "TrackType must be Turf only. If runners > 10 => NO BACK."
+    "TrackType must be Turf only. If Total runners in the race > 10 => NO BACK."
 )
 
 # -------------------------
 # Data editor (dropdown columns)
 # -------------------------
-with st.expander("Edit/Add runners data", expanded=True):
-    edited = st.data_editor(
-        st.session_state.data,
-        key=f"data_editor_{st.session_state.editor_key}",
-        use_container_width=True,
-        num_rows="dynamic",
-        column_config={
-            "Race": st.column_config.TextColumn(required=True, help="Race identifier (e.g., R1)"),
-            "Jockey": st.column_config.SelectboxColumn(
-                "Jockey",
-                options=st.session_state.allowed_jockeys,
-                required=True,
-            ),
-            "Odds": st.column_config.NumberColumn(required=True, min_value=1.0, step=0.05),
-            "Venue": st.column_config.SelectboxColumn(
-                "Venue",
-                options=st.session_state.venues,
-                required=True,
-            ),
-            "TrackType": st.column_config.SelectboxColumn(
-                "TrackType",
-                options=TRACK_TYPES,
-                required=True,
-            ),
-            "Country": st.column_config.SelectboxColumn(
-                "Country",
-                options=ALLOWED_COUNTRIES,
-                required=True,
-            ),
-            "Reviewed": st.column_config.SelectboxColumn(
-                "Reviewed",
-                options=["Yes", "No"],
-                required=True,
-            ),
-        }
-    )
-    st.session_state.data = edited.copy()
+st.subheader("Input table (you fill this)")
+st.caption("Tip: **TotalRunners** should be the total number of horses in the race (same value for all rows of that race).")
+
+edited = st.data_editor(
+    st.session_state.data,
+    key=f"data_editor_{st.session_state.editor_key}",
+    use_container_width=True,
+    num_rows="dynamic",
+    column_config={
+        "Race": st.column_config.TextColumn(required=True, help="Race identifier (e.g., R1)"),
+        "TotalRunners": st.column_config.NumberColumn(
+            "TotalRunners",
+            required=True,
+            min_value=1,
+            step=1,
+            help="Total number of runners in the race (e.g., 12). If > 10, NO BACK."
+        ),
+        "Jockey": st.column_config.SelectboxColumn(
+            "Jockey",
+            options=st.session_state.allowed_jockeys,
+            required=True,
+        ),
+        "Odds": st.column_config.NumberColumn(required=True, min_value=1.0, step=0.05),
+        "Venue": st.column_config.SelectboxColumn(
+            "Venue",
+            options=st.session_state.venues,
+            required=True,
+        ),
+        "TrackType": st.column_config.SelectboxColumn(
+            "TrackType",
+            options=TRACK_TYPES,
+            required=True,
+        ),
+        "Country": st.column_config.SelectboxColumn(
+            "Country",
+            options=ALLOWED_COUNTRIES,
+            required=True,
+        ),
+        "Reviewed": st.column_config.SelectboxColumn(
+            "Reviewed",
+            options=["Yes", "No"],
+            required=True,
+        ),
+    }
+)
+st.session_state.data = edited.copy()
 
 df = st.session_state.data.copy()
 
@@ -239,6 +246,7 @@ if df.empty:
 
 # Clean / coerce
 df["Odds"] = pd.to_numeric(df["Odds"], errors="coerce")
+df["TotalRunners"] = pd.to_numeric(df["TotalRunners"], errors="coerce")
 df["Race"] = df["Race"].astype(str)
 
 # Race list
@@ -268,24 +276,32 @@ with nav2:
 
 race_df = df[df["Race"] == selected_race].copy()
 
+# ✅ Total runners for the race: take the first non-null TotalRunners
+total_runners_vals = race_df["TotalRunners"].dropna().tolist()
+total_runners = int(total_runners_vals[0]) if total_runners_vals else None
+
+# Also show how many rows you entered (not the real race runners)
+rows_entered = int(len(race_df))
+
 # Good horse by odds
 race_df["Good"] = race_df["Odds"].between(odds_min, odds_max, inclusive="both")
 
-# Race summary values
+# Race summary values (first row values)
 race_country = str(race_df["Country"].iloc[0])
 race_track = str(race_df["TrackType"].iloc[0])
 race_venue = str(race_df["Venue"].iloc[0])
-runners = int(len(race_df))
 reviewed_all = bool((race_df["Reviewed"].astype(str).str.strip() == "Yes").all())
 good_horses = int(race_df["Good"].sum())
 
 # Race decision
-if norm(race_country) not in ALLOWED_COUNTRIES_NORM:
+if total_runners is None:
+    final, reason = "❌ NO BACK", "TotalRunners is missing (enter total runners for this race)"
+elif norm(race_country) not in ALLOWED_COUNTRIES_NORM:
     final, reason = "❌ NO BACK", f"Country not allowed: {race_country}"
 elif norm(race_track) != TURF_ONLY_TRACK_NORM:
     final, reason = "❌ NO BACK", f"Not a Turf race: {race_track}"
-elif runners > max_runners:
-    final, reason = "❌ NO BACK", f"Runners {runners} > {max_runners}"
+elif total_runners > max_runners:
+    final, reason = "❌ NO BACK", f"Total runners {total_runners} > {max_runners}"
 elif norm(race_venue) in blocked_venues:
     final, reason = "❌ NO BACK", f"Blocked venue: {race_venue}"
 elif not reviewed_all:
@@ -297,7 +313,10 @@ elif good_horses > 1:
 else:
     final, reason = "✅ BACK", "Pass all rules (single good horse)"
 
-# Header
+# -------------------------
+# FINAL RESULT (clear)
+# -------------------------
+st.subheader("Final result (selected race)")
 if final.startswith("✅"):
     st.success(f"{selected_race}: {final} — {reason}")
 else:
@@ -320,20 +339,32 @@ race_df["Decision"] = race_df.apply(
     axis=1
 )
 
+# Show race details
 st.subheader("Race details")
 st.write(
     f"**Country:** {race_country}  |  **Venue:** {race_venue}  |  **Track:** {race_track}  |  "
-    f"**Runners:** {runners}  |  **Reviewed all:** {'Yes' if reviewed_all else 'No'}  |  "
-    f"**Good horses:** {good_horses}"
+    f"**Total runners (race):** {total_runners}  |  **Rows entered:** {rows_entered}  |  "
+    f"**Reviewed all:** {'Yes' if reviewed_all else 'No'}  |  **Good horses:** {good_horses}"
 )
 
+# Show runners for selected race
 st.subheader("Runners (this race)")
 race_df_display = race_df.reset_index(drop=True).copy()
 race_df_display.insert(0, "Runner #", race_df_display.index + 1)
 
 st.dataframe(
-    race_df_display[["Runner #", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed",
-                     "Good", "Jockey allowed", "Other good horses in race", "Decision"]],
+    race_df_display[[
+        "Runner #", "TotalRunners", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed",
+        "Good", "Jockey allowed", "Other good horses in race", "Decision"
+    ]],
     use_container_width=True,
     hide_index=True
 )
+
+# Show the actual pick(s) if any
+picks = race_df_display[race_df_display["Decision"] == "✅ BACK"][["Runner #", "Jockey", "Odds", "Venue", "Country", "TrackType"]]
+st.subheader("Pick(s) to BACK")
+if len(picks) == 0:
+    st.write("No picks for this race.")
+else:
+    st.dataframe(picks, use_container_width=True, hide_index=True)
