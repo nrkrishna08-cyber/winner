@@ -38,7 +38,7 @@ DEFAULT_VENUES = [
     "Moonee Valley",
 ]
 
-# ✅ Number of runners is now a USER INPUT column (per race)
+# TotalRunners is a user input column (per race)
 COLUMNS = ["Race", "TotalRunners", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
 
 def norm(s: str) -> str:
@@ -76,7 +76,7 @@ if "editor_key" not in st.session_state:
 def add_blank_row():
     row = {
         "Race": "",
-        "TotalRunners": None,  # user fills (e.g., 12)
+        "TotalRunners": None,
         "Jockey": st.session_state.allowed_jockeys[0] if st.session_state.allowed_jockeys else "",
         "Odds": None,
         "Venue": st.session_state.venues[0] if st.session_state.venues else "",
@@ -188,10 +188,10 @@ st.info(
 )
 
 # -------------------------
-# Data editor (dropdown columns)
+# Data editor (input table)
 # -------------------------
 st.subheader("Input table (you fill this)")
-st.caption("Tip: **TotalRunners** should be the total number of horses in the race (same value for all rows of that race).")
+st.caption("Tip: **TotalRunners** = total horses in the race. You can enter it on one row only — the app will auto-fill it for the whole race.")
 
 edited = st.data_editor(
     st.session_state.data,
@@ -205,97 +205,85 @@ edited = st.data_editor(
             required=True,
             min_value=1,
             step=1,
-            help="Total number of runners in the race (e.g., 12). If > 10, NO BACK."
+            help="Total number of runners in the race (e.g., 12). If > 10, NO BACK.",
         ),
-        "Jockey": st.column_config.SelectboxColumn(
-            "Jockey",
-            options=st.session_state.allowed_jockeys,
-            required=True,
-        ),
+        "Jockey": st.column_config.SelectboxColumn("Jockey", options=st.session_state.allowed_jockeys, required=True),
         "Odds": st.column_config.NumberColumn(required=True, min_value=1.0, step=0.05),
-        "Venue": st.column_config.SelectboxColumn(
-            "Venue",
-            options=st.session_state.venues,
-            required=True,
-        ),
-        "TrackType": st.column_config.SelectboxColumn(
-            "TrackType",
-            options=TRACK_TYPES,
-            required=True,
-        ),
-        "Country": st.column_config.SelectboxColumn(
-            "Country",
-            options=ALLOWED_COUNTRIES,
-            required=True,
-        ),
-        "Reviewed": st.column_config.SelectboxColumn(
-            "Reviewed",
-            options=["Yes", "No"],
-            required=True,
-        ),
-    }
+        "Venue": st.column_config.SelectboxColumn("Venue", options=st.session_state.venues, required=True),
+        "TrackType": st.column_config.SelectboxColumn("TrackType", options=TRACK_TYPES, required=True),
+        "Country": st.column_config.SelectboxColumn("Country", options=ALLOWED_COUNTRIES, required=True),
+        "Reviewed": st.column_config.SelectboxColumn("Reviewed", options=["Yes", "No"], required=True),
+    },
 )
 st.session_state.data = edited.copy()
 
 df = st.session_state.data.copy()
 
-# If empty, guide user
 if df.empty:
     st.warning("Your table is empty. Click **Add runner row** (sidebar) and start entering your race runners.")
     st.stop()
 
-# Clean / coerce
+# -------------------------
+# Robust cleaning (fixes 'Total runners missing' caused by spaces or partial entry)
+# -------------------------
+df["Race"] = df["Race"].astype(str).str.strip()  # ✅ trims spaces so R1 and 'R1 ' become the same race
 df["Odds"] = pd.to_numeric(df["Odds"], errors="coerce")
 df["TotalRunners"] = pd.to_numeric(df["TotalRunners"], errors="coerce")
-df["Race"] = df["Race"].astype(str)
+
+# ✅ Auto-fill TotalRunners within each race if user entered it on only one row
+df["TotalRunners"] = df.groupby("Race")["TotalRunners"].transform(lambda s: s.ffill().bfill())
 
 # Race list
-races = sorted(df["Race"].dropna().unique().tolist())
-races = [r for r in races if r.strip() != ""]
+races = sorted([r for r in df["Race"].dropna().unique().tolist() if str(r).strip() != ""])
 if not races:
     st.warning("No Race values found. Fill in the **Race** column (e.g., R1) for at least one runner.")
     st.stop()
 
 # Navigation
 st.session_state.race_idx = max(0, min(st.session_state.race_idx, len(races) - 1))
-
 nav1, nav2, nav3 = st.columns([1, 2, 1])
+
 with nav1:
     prev_disabled = st.session_state.race_idx <= 0
     if st.button("⬅️ Previous", use_container_width=True, disabled=prev_disabled):
         st.session_state.race_idx -= 1
         do_rerun()
+
 with nav3:
     next_disabled = st.session_state.race_idx >= len(races) - 1
     if st.button("Next ➡️", use_container_width=True, disabled=next_disabled):
         st.session_state.race_idx += 1
         do_rerun()
+
 with nav2:
     selected_race = st.selectbox("Select race", races, index=st.session_state.race_idx, key="race_select")
     st.session_state.race_idx = races.index(selected_race)
 
 race_df = df[df["Race"] == selected_race].copy()
 
-# ✅ Total runners for the race: take the first non-null TotalRunners
-total_runners_vals = race_df["TotalRunners"].dropna().tolist()
-total_runners = int(total_runners_vals[0]) if total_runners_vals else None
-
-# Also show how many rows you entered (not the real race runners)
+# Total runners for the selected race (after autofill)
+total_runners_vals = race_df["TotalRunners"].dropna().unique().tolist()
+total_runners = int(total_runners_vals[0]) if len(total_runners_vals) > 0 else None
 rows_entered = int(len(race_df))
 
 # Good horse by odds
 race_df["Good"] = race_df["Odds"].between(odds_min, odds_max, inclusive="both")
 
-# Race summary values (first row values)
+# Race summary values
 race_country = str(race_df["Country"].iloc[0])
 race_track = str(race_df["TrackType"].iloc[0])
 race_venue = str(race_df["Venue"].iloc[0])
 reviewed_all = bool((race_df["Reviewed"].astype(str).str.strip() == "Yes").all())
 good_horses = int(race_df["Good"].sum())
 
+# Detect inconsistent TotalRunners values (if user entered different numbers on different rows)
+inconsistent_total_runners = len(total_runners_vals) > 1
+
 # Race decision
 if total_runners is None:
-    final, reason = "❌ NO BACK", "TotalRunners is missing (enter total runners for this race)"
+    final, reason = "❌ NO BACK", "TotalRunners is missing for this race (enter it in any row of this race)"
+elif inconsistent_total_runners:
+    final, reason = "❌ NO BACK", f"TotalRunners is inconsistent in this race: {total_runners_vals} (make them the same)"
 elif norm(race_country) not in ALLOWED_COUNTRIES_NORM:
     final, reason = "❌ NO BACK", f"Country not allowed: {race_country}"
 elif norm(race_track) != TURF_ONLY_TRACK_NORM:
@@ -313,9 +301,7 @@ elif good_horses > 1:
 else:
     final, reason = "✅ BACK", "Pass all rules (single good horse)"
 
-# -------------------------
 # FINAL RESULT (clear)
-# -------------------------
 st.subheader("Final result (selected race)")
 if final.startswith("✅"):
     st.success(f"{selected_race}: {final} — {reason}")
@@ -339,7 +325,6 @@ race_df["Decision"] = race_df.apply(
     axis=1
 )
 
-# Show race details
 st.subheader("Race details")
 st.write(
     f"**Country:** {race_country}  |  **Venue:** {race_venue}  |  **Track:** {race_track}  |  "
@@ -347,7 +332,6 @@ st.write(
     f"**Reviewed all:** {'Yes' if reviewed_all else 'No'}  |  **Good horses:** {good_horses}"
 )
 
-# Show runners for selected race
 st.subheader("Runners (this race)")
 race_df_display = race_df.reset_index(drop=True).copy()
 race_df_display.insert(0, "Runner #", race_df_display.index + 1)
@@ -361,10 +345,14 @@ st.dataframe(
     hide_index=True
 )
 
-# Show the actual pick(s) if any
-picks = race_df_display[race_df_display["Decision"] == "✅ BACK"][["Runner #", "Jockey", "Odds", "Venue", "Country", "TrackType"]]
 st.subheader("Pick(s) to BACK")
+picks = race_df_display[race_df_display["Decision"] == "✅ BACK"][["Runner #", "Jockey", "Odds", "Venue", "Country", "TrackType"]]
 if len(picks) == 0:
     st.write("No picks for this race.")
 else:
     st.dataframe(picks, use_container_width=True, hide_index=True)
+
+# Optional debug help (collapsed)
+with st.expander("Debug (why TotalRunners might look missing)", expanded=False):
+    st.write("TotalRunners values found for this race:", total_runners_vals)
+    st.write("Tip: If you had Race values like 'R1 ' (extra space), this version auto-fixes it by trimming spaces.")
