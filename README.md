@@ -12,12 +12,12 @@ One-race-at-a-time, mobile-friendly BACK / NO BACK app.
 - If more than 1 good horse in the race => NO BACK
 - Jockey must be in your whitelist (editable in the sidebar)
 
+## Reset (button only)
+Use the sidebar button **Reset (table + race)** to restore the default table and jump back to the first race.
+Edits persist until you press reset.
+
 ## Run locally
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-## Deploy (Streamlit Community Cloud)
-1. Create a GitHub repo and upload these files.
-2. In Streamlit Community Cloud, select the repo and set the app file to `app.py`.

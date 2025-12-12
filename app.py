@@ -30,23 +30,56 @@ def norm(s: str) -> str:
 
 # Sample data (editable)
 default_df = pd.DataFrame([
-    {"Race": "R1", "Horse": "Horse A", "Jockey": "James Macdonald", "Odds": 1.70, "Venue": "Randwick",    "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-    {"Race": "R1", "Horse": "Horse B", "Jockey": "Random Jockey",   "Odds": 3.80, "Venue": "Randwick",    "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
+    {"Race": "R1", "Horse": "Horse A", "Jockey": "James Macdonald", "Odds": 1.70, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
+    {"Race": "R1", "Horse": "Horse B", "Jockey": "Random Jockey",   "Odds": 3.80, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
 
-    {"Race": "R2", "Horse": "Horse C", "Jockey": "Hugh Bowman",     "Odds": 1.90, "Venue": "Flemington",  "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-    {"Race": "R2", "Horse": "Horse D", "Jockey": "John Allen",      "Odds": 1.60, "Venue": "Flemington",  "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
+    {"Race": "R2", "Horse": "Horse C", "Jockey": "Hugh Bowman",     "Odds": 1.90, "Venue": "Flemington",   "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
+    {"Race": "R2", "Horse": "Horse D", "Jockey": "John Allen",      "Odds": 1.60, "Venue": "Flemington",   "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
 
-    {"Race": "R3", "Horse": "Horse E", "Jockey": "Warren Kennedy",  "Odds": 1.80, "Venue": "Happy Valley","TrackType": "Turf", "Country": "Australia", "Reviewed": True},
+    {"Race": "R3", "Horse": "Horse E", "Jockey": "Warren Kennedy",  "Odds": 1.80, "Venue": "Happy Valley", "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
 ])
 
+# -------------------------
+# Session state init
+# -------------------------
 if "data" not in st.session_state:
     st.session_state.data = default_df.copy()
 
 if "allowed_jockeys" not in st.session_state:
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
 
+if "race_idx" not in st.session_state:
+    st.session_state.race_idx = 0
+
+# Used to force-rebuild the data editor on reset
+if "editor_key" not in st.session_state:
+    st.session_state.editor_key = 0
+
+def reset_app(reset_jockeys: bool = False):
+    """Button-only reset."""
+    st.session_state.data = default_df.copy()
+    st.session_state.race_idx = 0
+
+    # Force the data editor to rebuild (otherwise it can keep the old grid state)
+    st.session_state.editor_key += 1
+
+    # Clear selectbox widget state so it snaps back cleanly
+    if "race_select" in st.session_state:
+        del st.session_state["race_select"]
+
+    if reset_jockeys:
+        st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+
 # Sidebar: jockey whitelist + rules
 with st.sidebar:
+    st.header("Reset")
+    if st.button("🔄 Reset (table + race)", use_container_width=True):
+        reset_app(reset_jockeys=False)
+        st.rerun()
+
+    st.caption("Tip: This reset keeps your jockey whitelist. If you want it to reset too, tell me and I’ll add a second button.")
+
+    st.divider()
     st.header("Jockey whitelist")
     st.caption("Only these jockeys are allowed. Add more anytime.")
 
@@ -96,6 +129,7 @@ st.info(
 with st.expander("Edit/Add runners data", expanded=False):
     edited = st.data_editor(
         st.session_state.data,
+        key=f"data_editor_{st.session_state.editor_key}",
         use_container_width=True,
         num_rows="dynamic",
         column_config={
@@ -128,10 +162,6 @@ races = sorted(df["Race"].astype(str).unique().tolist())
 if not races:
     st.warning("No races found. Add rows in the editor.")
     st.stop()
-
-# Keep an index in session state
-if "race_idx" not in st.session_state:
-    st.session_state.race_idx = 0
 
 # Clamp index in case races list changed
 st.session_state.race_idx = max(0, min(st.session_state.race_idx, len(races) - 1))
