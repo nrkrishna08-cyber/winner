@@ -1,10 +1,15 @@
-# Horse Backing Rules (Streamlit) — v9
+# Horse Backing Rules (Streamlit) — v10
 
-## Fix: 'Total runners missing' even when entered ✅
-This version:
-- Trims spaces in Race values (so **R1** and **R1␠** are treated the same)
-- Auto-fills **TotalRunners** within each race if you entered it on only one row (ffill/bfill)
-- Detects if TotalRunners is inconsistent within a race
+## Fix for StreamlitAPIException (data_editor type compatibilities) ✅
+Streamlit checks dataframe dtypes against column_config. An empty dataframe must still have correct dtypes.
+This version creates the empty table with:
+- TotalRunners: Int64 (nullable int)
+- Odds: float
+- others: string
+
+It also:
+- trims spaces in Race
+- auto-fills TotalRunners within each race
 
 ## Run
 ```bash
