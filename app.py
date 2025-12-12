@@ -7,8 +7,12 @@ st.title("🏇 Horse Backing Rules (One Race at a Time)")
 # -------------------------
 # Constants / Rules
 # -------------------------
-ALLOWED_COUNTRIES = {"australia", "new zealand", "newzealand", "south africa", "france"}
-TURF_ONLY_TRACK = "turf"
+ALLOWED_COUNTRIES = ["Australia", "New Zealand", "South Africa", "France"]
+ALLOWED_COUNTRIES_NORM = {c.strip().lower() for c in ALLOWED_COUNTRIES}
+
+TRACK_TYPES = ["Turf", "All Weather", "Synthetic"]
+TURF_ONLY_TRACK_NORM = "turf"
+
 ODDS_MIN_DEFAULT = 1.4
 ODDS_MAX_DEFAULT = 2.0
 
@@ -27,7 +31,14 @@ DEFAULT_ALLOWED_JOCKEYS = [
     "Warren Kennedy",
 ]
 
-COLUMNS = ["Race", "Horse", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
+DEFAULT_VENUES = [
+    "Randwick",
+    "Flemington",
+    "Caulfield",
+    "Moonee Valley",
+]
+
+COLUMNS = ["Race", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
 
 def norm(s: str) -> str:
     return str(s).strip().lower()
@@ -50,8 +61,10 @@ if "data" not in st.session_state:
     st.session_state.data = empty_df.copy()
 
 if "allowed_jockeys" not in st.session_state or not st.session_state.get("allowed_jockeys"):
-    # Keep your default jockey whitelist (you can add more)
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+
+if "venues" not in st.session_state or not st.session_state.get("venues"):
+    st.session_state.venues = DEFAULT_VENUES.copy()
 
 if "race_idx" not in st.session_state:
     st.session_state.race_idx = 0
@@ -60,9 +73,15 @@ if "editor_key" not in st.session_state:
     st.session_state.editor_key = 0
 
 def add_blank_row():
-    row = {c: "" for c in COLUMNS}
-    row["Odds"] = None
-    row["Reviewed"] = False
+    row = {
+        "Race": "",
+        "Jockey": st.session_state.allowed_jockeys[0] if st.session_state.allowed_jockeys else "",
+        "Odds": None,
+        "Venue": st.session_state.venues[0] if st.session_state.venues else "",
+        "TrackType": "Turf",
+        "Country": "Australia",
+        "Reviewed": "No",
+    }
     st.session_state.data = pd.concat([st.session_state.data, pd.DataFrame([row])], ignore_index=True)
 
 def reset_table():
@@ -76,13 +95,14 @@ def reset_table():
 def reset_all():
     reset_table()
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+    st.session_state.venues = DEFAULT_VENUES.copy()
 
 # -------------------------
 # Sidebar
 # -------------------------
 with st.sidebar:
     st.header("Data")
-    if st.button("➕ Add blank runner row", use_container_width=True):
+    if st.button("➕ Add runner row", use_container_width=True):
         add_blank_row()
         do_rerun()
 
@@ -96,13 +116,12 @@ with st.sidebar:
             reset_all()
             do_rerun()
 
-    st.caption("No default table: you build the race table each time. Reset ALL also restores the default jockey whitelist.")
+    st.caption("Table starts empty. Add rows, then fill Race/Jockey/Odds/Venue/Track/Country/Reviewed.")
 
     st.divider()
-    st.header("Jockey whitelist")
-    st.caption("Only these jockeys are allowed. Add/remove anytime.")
+    st.header("Jockey list (dropdown)")
 
-    add_j = st.text_input("Add allowed jockey name", key="add_jockey")
+    add_j = st.text_input("Add jockey name")
     c3, c4 = st.columns(2)
     with c3:
         if st.button("Add jockey", use_container_width=True):
@@ -111,33 +130,53 @@ with st.sidebar:
                 st.session_state.allowed_jockeys.append(name)
             do_rerun()
     with c4:
-        if st.button("Restore default list", use_container_width=True):
+        if st.button("Restore default jockeys", use_container_width=True):
             st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
             do_rerun()
 
     remove_j = st.multiselect("Remove jockey(s)", options=st.session_state.allowed_jockeys, key="remove_jockeys")
-    if st.button("Remove selected", use_container_width=True):
+    if st.button("Remove selected jockeys", use_container_width=True):
         st.session_state.allowed_jockeys = [j for j in st.session_state.allowed_jockeys if j not in remove_j]
         if not st.session_state.allowed_jockeys:
             st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
         do_rerun()
 
-    allowed_jockeys = {norm(x) for x in st.session_state.allowed_jockeys}
+    allowed_jockeys_norm = {norm(x) for x in st.session_state.allowed_jockeys}
 
     st.divider()
-    st.header("Race filters")
+    st.header("Venue list (dropdown)")
+
+    add_v = st.text_input("Add venue name")
+    c5, c6 = st.columns(2)
+    with c5:
+        if st.button("Add venue", use_container_width=True):
+            name = add_v.strip()
+            if name and name not in st.session_state.venues:
+                st.session_state.venues.append(name)
+            do_rerun()
+    with c6:
+        if st.button("Restore default venues", use_container_width=True):
+            st.session_state.venues = DEFAULT_VENUES.copy()
+            do_rerun()
+
+    remove_v = st.multiselect("Remove venue(s)", options=st.session_state.venues, key="remove_venues")
+    if st.button("Remove selected venues", use_container_width=True):
+        st.session_state.venues = [v for v in st.session_state.venues if v not in remove_v]
+        if not st.session_state.venues:
+            st.session_state.venues = DEFAULT_VENUES.copy()
+        do_rerun()
+
+    st.divider()
+    st.header("Rules")
     max_runners = st.number_input("Max runners allowed", min_value=1, max_value=30, value=10, step=1)
 
     blocked_venues_raw = st.text_area(
         "Blocked venues (one per line)",
         value="Happy Valley\nGreyville\nFairview",
         height=110,
-        key="blocked_venues"
     )
     blocked_venues = {norm(x) for x in blocked_venues_raw.splitlines() if x.strip()}
 
-    st.divider()
-    st.header("Good horse rule (Odds)")
     odds_min, odds_max = st.slider(
         "Odds range for GOOD horse",
         1.0, 10.0,
@@ -146,12 +185,12 @@ with st.sidebar:
     )
 
 st.info(
-    "Hard rules: Countries allowed = Australia, New Zealand, South Africa, France. "
-    "Turf only (NO All Weather). Max runners = 10."
+    "Hard rules: Country must be Australia / New Zealand / South Africa / France. "
+    "TrackType must be Turf only. If runners > 10 => NO BACK."
 )
 
 # -------------------------
-# Data editor
+# Data editor (dropdown columns)
 # -------------------------
 with st.expander("Edit/Add runners data", expanded=True):
     edited = st.data_editor(
@@ -161,13 +200,32 @@ with st.expander("Edit/Add runners data", expanded=True):
         num_rows="dynamic",
         column_config={
             "Race": st.column_config.TextColumn(required=True, help="Race identifier (e.g., R1)"),
-            "Horse": st.column_config.TextColumn(required=True),
-            "Jockey": st.column_config.TextColumn(required=True),
+            "Jockey": st.column_config.SelectboxColumn(
+                "Jockey",
+                options=st.session_state.allowed_jockeys,
+                required=True,
+            ),
             "Odds": st.column_config.NumberColumn(required=True, min_value=1.0, step=0.05),
-            "Venue": st.column_config.TextColumn(required=True),
-            "TrackType": st.column_config.TextColumn(required=True, help="Must be 'Turf'"),
-            "Country": st.column_config.TextColumn(required=True, help="Australia / New Zealand / South Africa / France"),
-            "Reviewed": st.column_config.CheckboxColumn("Reviewed?"),
+            "Venue": st.column_config.SelectboxColumn(
+                "Venue",
+                options=st.session_state.venues,
+                required=True,
+            ),
+            "TrackType": st.column_config.SelectboxColumn(
+                "TrackType",
+                options=TRACK_TYPES,
+                required=True,
+            ),
+            "Country": st.column_config.SelectboxColumn(
+                "Country",
+                options=ALLOWED_COUNTRIES,
+                required=True,
+            ),
+            "Reviewed": st.column_config.SelectboxColumn(
+                "Reviewed",
+                options=["Yes", "No"],
+                required=True,
+            ),
         }
     )
     st.session_state.data = edited.copy()
@@ -176,63 +234,55 @@ df = st.session_state.data.copy()
 
 # If empty, guide user
 if df.empty:
-    st.warning("Your table is empty. Click **Add blank runner row** (sidebar) and start entering your race runners.")
+    st.warning("Your table is empty. Click **Add runner row** (sidebar) and start entering your race runners.")
     st.stop()
 
-# Coerce types
+# Clean / coerce
 df["Odds"] = pd.to_numeric(df["Odds"], errors="coerce")
+df["Race"] = df["Race"].astype(str)
 
-# -------------------------
-# Race list + navigation
-# -------------------------
-races = sorted(df["Race"].astype(str).dropna().unique().tolist())
+# Race list
+races = sorted(df["Race"].dropna().unique().tolist())
 races = [r for r in races if r.strip() != ""]
 if not races:
     st.warning("No Race values found. Fill in the **Race** column (e.g., R1) for at least one runner.")
     st.stop()
 
+# Navigation
 st.session_state.race_idx = max(0, min(st.session_state.race_idx, len(races) - 1))
 
 nav1, nav2, nav3 = st.columns([1, 2, 1])
-
 with nav1:
     prev_disabled = st.session_state.race_idx <= 0
     if st.button("⬅️ Previous", use_container_width=True, disabled=prev_disabled):
         st.session_state.race_idx -= 1
         do_rerun()
-
 with nav3:
     next_disabled = st.session_state.race_idx >= len(races) - 1
     if st.button("Next ➡️", use_container_width=True, disabled=next_disabled):
         st.session_state.race_idx += 1
         do_rerun()
-
 with nav2:
-    selected_race = st.selectbox(
-        "Select race",
-        races,
-        index=st.session_state.race_idx,
-        key="race_select",
-    )
+    selected_race = st.selectbox("Select race", races, index=st.session_state.race_idx, key="race_select")
     st.session_state.race_idx = races.index(selected_race)
 
-race_df = df[df["Race"].astype(str) == selected_race].copy()
+race_df = df[df["Race"] == selected_race].copy()
 
 # Good horse by odds
 race_df["Good"] = race_df["Odds"].between(odds_min, odds_max, inclusive="both")
 
-# Race summary
+# Race summary values
 race_country = str(race_df["Country"].iloc[0])
 race_track = str(race_df["TrackType"].iloc[0])
 race_venue = str(race_df["Venue"].iloc[0])
 runners = int(len(race_df))
-reviewed_all = bool(race_df["Reviewed"].fillna(False).all())
+reviewed_all = bool((race_df["Reviewed"].astype(str).str.strip() == "Yes").all())
 good_horses = int(race_df["Good"].sum())
 
 # Race decision
-if norm(race_country) not in ALLOWED_COUNTRIES:
+if norm(race_country) not in ALLOWED_COUNTRIES_NORM:
     final, reason = "❌ NO BACK", f"Country not allowed: {race_country}"
-elif norm(race_track) != TURF_ONLY_TRACK:
+elif norm(race_track) != TURF_ONLY_TRACK_NORM:
     final, reason = "❌ NO BACK", f"Not a Turf race: {race_track}"
 elif runners > max_runners:
     final, reason = "❌ NO BACK", f"Runners {runners} > {max_runners}"
@@ -255,7 +305,7 @@ else:
 
 # Runner-level decisions
 race_df["Jockey allowed"] = race_df["Jockey"].astype(str).apply(
-    lambda j: "Yes" if norm(j) in allowed_jockeys else "No"
+    lambda j: "Yes" if norm(j) in allowed_jockeys_norm else "No"
 )
 
 race_df["Other good horses in race"] = race_df.apply(
@@ -263,9 +313,9 @@ race_df["Other good horses in race"] = race_df.apply(
     axis=1
 )
 
-race_df["Horse decision"] = race_df.apply(
+race_df["Decision"] = race_df.apply(
     lambda r: "✅ BACK"
-    if (final == "✅ BACK" and bool(r["Good"]) and norm(r["Jockey"]) in allowed_jockeys)
+    if (final == "✅ BACK" and bool(r["Good"]) and norm(r["Jockey"]) in allowed_jockeys_norm)
     else "❌ NO BACK",
     axis=1
 )
@@ -278,8 +328,12 @@ st.write(
 )
 
 st.subheader("Runners (this race)")
+race_df_display = race_df.reset_index(drop=True).copy()
+race_df_display.insert(0, "Runner #", race_df_display.index + 1)
+
 st.dataframe(
-    race_df[["Horse", "Jockey", "Odds", "Good", "Jockey allowed", "Other good horses in race", "Horse decision", "Reviewed"]],
+    race_df_display[["Runner #", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed",
+                     "Good", "Jockey allowed", "Other good horses in race", "Decision"]],
     use_container_width=True,
     hide_index=True
 )
