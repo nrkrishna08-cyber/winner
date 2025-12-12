@@ -12,9 +12,9 @@ One-race-at-a-time, mobile-friendly BACK / NO BACK app.
 - If more than 1 good horse in the race => NO BACK
 - Jockey must be in your whitelist (editable in the sidebar)
 
-## Reset (button only)
-Use the sidebar button **Reset (table + race)** to restore the default table and jump back to the first race.
-Edits persist until you press reset.
+## Reset
+- **Reset table**: resets runners data + race selection
+- **Reset ALL**: also restores the default jockey whitelist
 
 ## Run locally
 ```bash

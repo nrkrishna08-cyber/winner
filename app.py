@@ -4,7 +4,9 @@ import pandas as pd
 st.set_page_config(page_title="Horse Backing Rules", page_icon="🏇", layout="wide")
 st.title("🏇 Horse Backing Rules (One Race at a Time)")
 
-# Hard rules
+# -------------------------
+# Constants / Rules
+# -------------------------
 ALLOWED_COUNTRIES = {"australia", "new zealand", "newzealand", "south africa", "france"}
 TURF_ONLY_TRACK = "turf"
 ODDS_MIN_DEFAULT = 1.4
@@ -28,7 +30,16 @@ DEFAULT_ALLOWED_JOCKEYS = [
 def norm(s: str) -> str:
     return str(s).strip().lower()
 
-# Sample data (editable)
+def do_rerun():
+    """Compatibility rerun (works across Streamlit versions)."""
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+# -------------------------
+# Default sample data (editable)
+# -------------------------
 default_df = pd.DataFrame([
     {"Race": "R1", "Horse": "Horse A", "Jockey": "James Macdonald", "Odds": 1.70, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
     {"Race": "R1", "Horse": "Horse B", "Jockey": "Random Jockey",   "Odds": 3.80, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
@@ -45,7 +56,8 @@ default_df = pd.DataFrame([
 if "data" not in st.session_state:
     st.session_state.data = default_df.copy()
 
-if "allowed_jockeys" not in st.session_state:
+# If user removed all jockeys, restore defaults automatically
+if "allowed_jockeys" not in st.session_state or not st.session_state.allowed_jockeys:
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
 
 if "race_idx" not in st.session_state:
@@ -55,48 +67,57 @@ if "race_idx" not in st.session_state:
 if "editor_key" not in st.session_state:
     st.session_state.editor_key = 0
 
-def reset_app(reset_jockeys: bool = False):
-    """Button-only reset."""
+def reset_table_and_race():
     st.session_state.data = default_df.copy()
     st.session_state.race_idx = 0
-
-    # Force the data editor to rebuild (otherwise it can keep the old grid state)
     st.session_state.editor_key += 1
-
-    # Clear selectbox widget state so it snaps back cleanly
     if "race_select" in st.session_state:
         del st.session_state["race_select"]
 
-    if reset_jockeys:
-        st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+def reset_everything():
+    reset_table_and_race()
+    st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
 
-# Sidebar: jockey whitelist + rules
+# -------------------------
+# Sidebar
+# -------------------------
 with st.sidebar:
     st.header("Reset")
-    if st.button("🔄 Reset (table + race)", use_container_width=True):
-        reset_app(reset_jockeys=False)
-        st.rerun()
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Reset table", use_container_width=True):
+            reset_table_and_race()
+            do_rerun()
+    with c2:
+        if st.button("Reset ALL", use_container_width=True):
+            reset_everything()
+            do_rerun()
 
-    st.caption("Tip: This reset keeps your jockey whitelist. If you want it to reset too, tell me and I’ll add a second button.")
+    st.caption("Reset table = resets runners + race selection. Reset ALL = also restores the default jockey list.")
 
     st.divider()
     st.header("Jockey whitelist")
-    st.caption("Only these jockeys are allowed. Add more anytime.")
+    st.caption("Only these jockeys are allowed. Add/remove anytime.")
 
     add_j = st.text_input("Add jockey name")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("➕ Add", use_container_width=True):
+    c3, c4 = st.columns(2)
+    with c3:
+        if st.button("Add jockey", use_container_width=True):
             name = add_j.strip()
             if name and name not in st.session_state.allowed_jockeys:
                 st.session_state.allowed_jockeys.append(name)
-    with c2:
-        if st.button("🧹 Reset defaults", use_container_width=True):
+                do_rerun()
+    with c4:
+        if st.button("Restore default list", use_container_width=True):
             st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+            do_rerun()
 
     remove_j = st.multiselect("Remove jockey(s)", options=st.session_state.allowed_jockeys)
-    if st.button("🗑️ Remove selected", use_container_width=True):
+    if st.button("Remove selected", use_container_width=True):
         st.session_state.allowed_jockeys = [j for j in st.session_state.allowed_jockeys if j not in remove_j]
+        if not st.session_state.allowed_jockeys:
+            st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
+        do_rerun()
 
     allowed_jockeys = {norm(x) for x in st.session_state.allowed_jockeys}
 
@@ -125,7 +146,9 @@ st.info(
     "Turf only (NO All Weather). Max runners = 10."
 )
 
-# Editable data editor (optional)
+# -------------------------
+# Data editor (optional)
+# -------------------------
 with st.expander("Edit/Add runners data", expanded=False):
     edited = st.data_editor(
         st.session_state.data,
@@ -163,7 +186,6 @@ if not races:
     st.warning("No races found. Add rows in the editor.")
     st.stop()
 
-# Clamp index in case races list changed
 st.session_state.race_idx = max(0, min(st.session_state.race_idx, len(races) - 1))
 
 nav1, nav2, nav3 = st.columns([1, 2, 1])
@@ -172,13 +194,13 @@ with nav1:
     prev_disabled = st.session_state.race_idx <= 0
     if st.button("⬅️ Previous", use_container_width=True, disabled=prev_disabled):
         st.session_state.race_idx -= 1
-        st.rerun()
+        do_rerun()
 
 with nav3:
     next_disabled = st.session_state.race_idx >= len(races) - 1
     if st.button("Next ➡️", use_container_width=True, disabled=next_disabled):
         st.session_state.race_idx += 1
-        st.rerun()
+        do_rerun()
 
 with nav2:
     selected_race = st.selectbox(
@@ -191,10 +213,10 @@ with nav2:
 
 race_df = df[df["Race"].astype(str) == selected_race].copy()
 
-# Compute Good horse by odds
+# Good horse by odds
 race_df["Good"] = race_df["Odds"].between(odds_min, odds_max, inclusive="both")
 
-# Race-level summary values
+# Race summary
 race_country = str(race_df["Country"].iloc[0])
 race_track = str(race_df["TrackType"].iloc[0])
 race_venue = str(race_df["Venue"].iloc[0])
@@ -220,7 +242,7 @@ elif good_horses > 1:
 else:
     final, reason = "✅ BACK", "Pass all rules (single good horse)"
 
-# Header (mobile-friendly)
+# Header
 if final.startswith("✅"):
     st.success(f"{selected_race}: {final} — {reason}")
 else:
