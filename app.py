@@ -27,92 +27,95 @@ DEFAULT_ALLOWED_JOCKEYS = [
     "Warren Kennedy",
 ]
 
+COLUMNS = ["Race", "Horse", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
+
 def norm(s: str) -> str:
     return str(s).strip().lower()
 
 def do_rerun():
-    """Compatibility rerun (works across Streamlit versions)."""
     if hasattr(st, "rerun"):
         st.rerun()
     else:
         st.experimental_rerun()
 
 # -------------------------
-# Default sample data (editable)
+# No default table: start EMPTY
 # -------------------------
-default_df = pd.DataFrame([
-    {"Race": "R1", "Horse": "Horse A", "Jockey": "James Macdonald", "Odds": 1.70, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-    {"Race": "R1", "Horse": "Horse B", "Jockey": "Random Jockey",   "Odds": 3.80, "Venue": "Randwick",     "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-
-    {"Race": "R2", "Horse": "Horse C", "Jockey": "Hugh Bowman",     "Odds": 1.90, "Venue": "Flemington",   "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-    {"Race": "R2", "Horse": "Horse D", "Jockey": "John Allen",      "Odds": 1.60, "Venue": "Flemington",   "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-
-    {"Race": "R3", "Horse": "Horse E", "Jockey": "Warren Kennedy",  "Odds": 1.80, "Venue": "Happy Valley", "TrackType": "Turf", "Country": "Australia", "Reviewed": True},
-])
+empty_df = pd.DataFrame(columns=COLUMNS)
 
 # -------------------------
 # Session state init
 # -------------------------
 if "data" not in st.session_state:
-    st.session_state.data = default_df.copy()
+    st.session_state.data = empty_df.copy()
 
-# If user removed all jockeys, restore defaults automatically
-if "allowed_jockeys" not in st.session_state or not st.session_state.allowed_jockeys:
+if "allowed_jockeys" not in st.session_state or not st.session_state.get("allowed_jockeys"):
+    # Keep your default jockey whitelist (you can add more)
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
 
 if "race_idx" not in st.session_state:
     st.session_state.race_idx = 0
 
-# Used to force-rebuild the data editor on reset
 if "editor_key" not in st.session_state:
     st.session_state.editor_key = 0
 
-def reset_table_and_race():
-    st.session_state.data = default_df.copy()
+def add_blank_row():
+    row = {c: "" for c in COLUMNS}
+    row["Odds"] = None
+    row["Reviewed"] = False
+    st.session_state.data = pd.concat([st.session_state.data, pd.DataFrame([row])], ignore_index=True)
+
+def reset_table():
+    st.session_state.data = empty_df.copy()
     st.session_state.race_idx = 0
     st.session_state.editor_key += 1
-    if "race_select" in st.session_state:
-        del st.session_state["race_select"]
+    for k in ["race_select"]:
+        if k in st.session_state:
+            del st.session_state[k]
 
-def reset_everything():
-    reset_table_and_race()
+def reset_all():
+    reset_table()
     st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
 
 # -------------------------
 # Sidebar
 # -------------------------
 with st.sidebar:
-    st.header("Reset")
+    st.header("Data")
+    if st.button("➕ Add blank runner row", use_container_width=True):
+        add_blank_row()
+        do_rerun()
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Reset table", use_container_width=True):
-            reset_table_and_race()
+            reset_table()
             do_rerun()
     with c2:
         if st.button("Reset ALL", use_container_width=True):
-            reset_everything()
+            reset_all()
             do_rerun()
 
-    st.caption("Reset table = resets runners + race selection. Reset ALL = also restores the default jockey list.")
+    st.caption("No default table: you build the race table each time. Reset ALL also restores the default jockey whitelist.")
 
     st.divider()
     st.header("Jockey whitelist")
     st.caption("Only these jockeys are allowed. Add/remove anytime.")
 
-    add_j = st.text_input("Add jockey name")
+    add_j = st.text_input("Add allowed jockey name", key="add_jockey")
     c3, c4 = st.columns(2)
     with c3:
         if st.button("Add jockey", use_container_width=True):
             name = add_j.strip()
             if name and name not in st.session_state.allowed_jockeys:
                 st.session_state.allowed_jockeys.append(name)
-                do_rerun()
+            do_rerun()
     with c4:
         if st.button("Restore default list", use_container_width=True):
             st.session_state.allowed_jockeys = DEFAULT_ALLOWED_JOCKEYS.copy()
             do_rerun()
 
-    remove_j = st.multiselect("Remove jockey(s)", options=st.session_state.allowed_jockeys)
+    remove_j = st.multiselect("Remove jockey(s)", options=st.session_state.allowed_jockeys, key="remove_jockeys")
     if st.button("Remove selected", use_container_width=True):
         st.session_state.allowed_jockeys = [j for j in st.session_state.allowed_jockeys if j not in remove_j]
         if not st.session_state.allowed_jockeys:
@@ -128,7 +131,8 @@ with st.sidebar:
     blocked_venues_raw = st.text_area(
         "Blocked venues (one per line)",
         value="Happy Valley\nGreyville\nFairview",
-        height=110
+        height=110,
+        key="blocked_venues"
     )
     blocked_venues = {norm(x) for x in blocked_venues_raw.splitlines() if x.strip()}
 
@@ -147,22 +151,22 @@ st.info(
 )
 
 # -------------------------
-# Data editor (optional)
+# Data editor
 # -------------------------
-with st.expander("Edit/Add runners data", expanded=False):
+with st.expander("Edit/Add runners data", expanded=True):
     edited = st.data_editor(
         st.session_state.data,
         key=f"data_editor_{st.session_state.editor_key}",
         use_container_width=True,
         num_rows="dynamic",
         column_config={
-            "Race": st.column_config.TextColumn(required=True),
+            "Race": st.column_config.TextColumn(required=True, help="Race identifier (e.g., R1)"),
             "Horse": st.column_config.TextColumn(required=True),
             "Jockey": st.column_config.TextColumn(required=True),
             "Odds": st.column_config.NumberColumn(required=True, min_value=1.0, step=0.05),
             "Venue": st.column_config.TextColumn(required=True),
-            "TrackType": st.column_config.TextColumn(required=True),
-            "Country": st.column_config.TextColumn(required=True),
+            "TrackType": st.column_config.TextColumn(required=True, help="Must be 'Turf'"),
+            "Country": st.column_config.TextColumn(required=True, help="Australia / New Zealand / South Africa / France"),
             "Reviewed": st.column_config.CheckboxColumn("Reviewed?"),
         }
     )
@@ -170,20 +174,21 @@ with st.expander("Edit/Add runners data", expanded=False):
 
 df = st.session_state.data.copy()
 
-needed = ["Race", "Horse", "Jockey", "Odds", "Venue", "TrackType", "Country", "Reviewed"]
-missing = [c for c in needed if c not in df.columns]
-if missing:
-    st.error(f"Missing columns: {missing}")
+# If empty, guide user
+if df.empty:
+    st.warning("Your table is empty. Click **Add blank runner row** (sidebar) and start entering your race runners.")
     st.stop()
 
+# Coerce types
 df["Odds"] = pd.to_numeric(df["Odds"], errors="coerce")
 
 # -------------------------
 # Race list + navigation
 # -------------------------
-races = sorted(df["Race"].astype(str).unique().tolist())
+races = sorted(df["Race"].astype(str).dropna().unique().tolist())
+races = [r for r in races if r.strip() != ""]
 if not races:
-    st.warning("No races found. Add rows in the editor.")
+    st.warning("No Race values found. Fill in the **Race** column (e.g., R1) for at least one runner.")
     st.stop()
 
 st.session_state.race_idx = max(0, min(st.session_state.race_idx, len(races) - 1))
@@ -221,7 +226,7 @@ race_country = str(race_df["Country"].iloc[0])
 race_track = str(race_df["TrackType"].iloc[0])
 race_venue = str(race_df["Venue"].iloc[0])
 runners = int(len(race_df))
-reviewed_all = bool(race_df["Reviewed"].all())
+reviewed_all = bool(race_df["Reviewed"].fillna(False).all())
 good_horses = int(race_df["Good"].sum())
 
 # Race decision
